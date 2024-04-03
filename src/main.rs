@@ -27,9 +27,10 @@ pub struct App {
 }
 
 mod parser {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use winnow::{
+        ascii::escaped_transform,
         combinator::{alt, cut_err, delimited, preceded, repeat, rest, separated},
         stream::AsChar,
         token::{any, literal, take_till, take_until},
@@ -48,7 +49,12 @@ mod parser {
     pub enum Insert<'a> {
         Path(&'a Path),
         Var(&'a str),
+        PathBuf(PathBuf),
     }
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct Ident<'a>(&'a str);
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub struct Var<'a>(Vec<Ident<'a>>);
 
     pub fn lines<'a>(s: &mut &'a str) -> PResult<Vec<Line<'a>>> {
         separated(.., line, line_end).parse_next(s)
@@ -75,10 +81,27 @@ mod parser {
     }
     fn insert<'a>(s: &mut &'a str) -> PResult<Insert<'a>> {
         alt((
-            quoted("\"").map(AsRef::as_ref).map(Insert::Path),
+            path_single.map(Insert::Path),
+            path_unescaped.map(Insert::Path),
+            path_escaped.map(Insert::PathBuf),
             quoted("\'").map(AsRef::as_ref).map(Insert::Path),
             preceded('$', take_till(.., char::is_newline)).map(Insert::Var),
         ))
+        .parse_next(s)
+    }
+
+    fn path_single<'a>(s: &mut &'a str) -> PResult<&'a Path> {
+        quoted("\'").map(AsRef::as_ref).parse_next(s)
+    }
+    fn path_unescaped<'a>(s: &mut &'a str) -> PResult<&'a Path> {
+        quoted("\"").map(AsRef::as_ref).parse_next(s)
+    }
+    fn path_escaped<'a>(s: &mut &'a str) -> PResult<PathBuf> {
+        delimited(
+            '"',
+            escaped_transform(take_until(.., '"'), '\\', escape).map(String::into),
+            '"',
+        )
         .parse_next(s)
     }
 
@@ -99,9 +122,9 @@ mod parser {
     }
     #[cfg(test)]
     mod test {
+        use super::*;
         #[test]
         fn full_parse() {
-            use super::*;
             let mut f = r#"+<!DOCTYPE html>
 +  <head>
 :insert $page.title
@@ -140,7 +163,6 @@ mod parser {
         }
         #[test]
         fn insert() {
-            use super::*;
             let mut f = r#":insert $page.title
 :insert "nav.html"
 :insert $page.content
@@ -159,7 +181,6 @@ mod parser {
         }
         #[test]
         fn insert_path() {
-            use super::*;
             let mut f = r#":insert "nav.html"
 :insert "leftbar.html"
 "#;
@@ -173,8 +194,24 @@ mod parser {
             )
         }
         #[test]
+        fn insert_path_escaped() {
+            let mut f = r#":insert "nav\r\".h\ntml""#;
+            let parsed = super::lines(&mut f).expect("parse failed");
+            assert_eq!(
+                parsed,
+                [Line::Command(Command::Insert(Insert::PathBuf(
+                    "nav\r\".h\ntml".into(),
+                ),),),],
+            )
+        }
+        #[test]
+        fn path_escaped() {
+            let mut f = r#""nav\r\".h\ntml""#;
+            let parsed: PathBuf = super::path_escaped(&mut f).expect("parse failed");
+            assert_eq!(parsed, PathBuf::from("nav\r\".h\ntml"))
+        }
+        #[test]
         fn insert_var() {
-            use super::*;
             let mut f = r#":insert $page.title
 :insert $page.content
 "#;
@@ -189,7 +226,6 @@ mod parser {
         }
         #[test]
         fn raw() {
-            use super::*;
             let mut f = r#"+<!DOCTYPE html>
 +  <head>
 +              <nav id="navbar" style="margin-bottom: 0px;">
