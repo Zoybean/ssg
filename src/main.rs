@@ -35,16 +35,16 @@ mod parser {
         token::{any, literal, take_till, take_until},
         PResult, Parser,
     };
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Line<'a> {
         Raw(&'a str),
         Command(Command<'a>),
     }
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Command<'a> {
         Insert(Insert<'a>),
     }
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Insert<'a> {
         Path(&'a Path),
         Var(&'a str),
@@ -96,5 +96,127 @@ mod parser {
             '"'.value("\""),
         ))
         .parse_next(s)
+    }
+    #[cfg(test)]
+    mod test {
+        #[test]
+        fn full_parse() {
+            use super::*;
+            let mut f = r#"+<!DOCTYPE html>
++  <head>
+:insert $page.title
++              <nav id="navbar" style="margin-bottom: 0px;">
+:insert "nav.html"
++              </nav>
++              <main/>
+:insert $page.content
++              <aside id="leftSidebar" style="margin-right: 0px;">
+:insert "leftbar.html"
++              </aside>
++            </div>
++
+"#;
+            let parsed = super::lines(&mut f).expect("parse failed");
+            assert_eq!(
+                parsed,
+                [
+                    Line::Raw("<!DOCTYPE html>",),
+                    Line::Raw("  <head>",),
+                    Line::Command(Command::Insert(Insert::Var("page.title",),),),
+                    Line::Raw("              <nav id=\"navbar\" style=\"margin-bottom: 0px;\">",),
+                    Line::Command(Command::Insert(Insert::Path("nav.html".as_ref(),),),),
+                    Line::Raw("              </nav>",),
+                    Line::Raw("              <main/>",),
+                    Line::Command(Command::Insert(Insert::Var("page.content",),),),
+                    Line::Raw(
+                        "              <aside id=\"leftSidebar\" style=\"margin-right: 0px;\">",
+                    ),
+                    Line::Command(Command::Insert(Insert::Path("leftbar.html".as_ref(),),),),
+                    Line::Raw("              </aside>",),
+                    Line::Raw("            </div>",),
+                    Line::Raw("",),
+                ],
+            )
+        }
+        #[test]
+        fn insert() {
+            use super::*;
+            let mut f = r#":insert $page.title
+:insert "nav.html"
+:insert $page.content
+:insert "leftbar.html"
+"#;
+            let parsed = super::lines(&mut f).expect("parse failed");
+            assert_eq!(
+                parsed,
+                [
+                    Line::Command(Command::Insert(Insert::Var("page.title",),),),
+                    Line::Command(Command::Insert(Insert::Path("nav.html".as_ref(),),),),
+                    Line::Command(Command::Insert(Insert::Var("page.content",),),),
+                    Line::Command(Command::Insert(Insert::Path("leftbar.html".as_ref(),),),),
+                ],
+            )
+        }
+        #[test]
+        fn insert_path() {
+            use super::*;
+            let mut f = r#":insert "nav.html"
+:insert "leftbar.html"
+"#;
+            let parsed = super::lines(&mut f).expect("parse failed");
+            assert_eq!(
+                parsed,
+                [
+                    Line::Command(Command::Insert(Insert::Path("nav.html".as_ref(),),),),
+                    Line::Command(Command::Insert(Insert::Path("leftbar.html".as_ref(),),),),
+                ],
+            )
+        }
+        #[test]
+        fn insert_var() {
+            use super::*;
+            let mut f = r#":insert $page.title
+:insert $page.content
+"#;
+            let parsed = super::lines(&mut f).expect("parse failed");
+            assert_eq!(
+                parsed,
+                [
+                    Line::Command(Command::Insert(Insert::Var("page.title",),),),
+                    Line::Command(Command::Insert(Insert::Var("page.content",),),),
+                ],
+            )
+        }
+        #[test]
+        fn raw() {
+            use super::*;
+            let mut f = r#"+<!DOCTYPE html>
++  <head>
++              <nav id="navbar" style="margin-bottom: 0px;">
++              </nav>
++              <main/>
++              <aside id="leftSidebar" style="margin-right: 0px;">
++              </aside>
++            </div>
++
+"#;
+            let parsed = super::lines(&mut f).expect("parse failed");
+            assert_eq!(
+                parsed,
+                [
+                    Line::Raw("<!DOCTYPE html>",),
+                    Line::Raw("  <head>",),
+                    Line::Raw("              <nav id=\"navbar\" style=\"margin-bottom: 0px;\">",),
+                    Line::Raw("              </nav>",),
+                    Line::Raw("              <main/>",),
+                    Line::Raw(
+                        "              <aside id=\"leftSidebar\" style=\"margin-right: 0px;\">",
+                    ),
+                    Line::Raw("              </aside>",),
+                    Line::Raw("            </div>",),
+                    Line::Raw("",),
+                ],
+            )
+        }
     }
 }
