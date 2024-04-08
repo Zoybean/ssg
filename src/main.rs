@@ -48,7 +48,7 @@ mod parser {
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Insert<'a> {
         Path(&'a Path),
-        Var(&'a str),
+        Var(Var<'a>),
         PathBuf(PathBuf),
     }
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -85,9 +85,19 @@ mod parser {
             path_unescaped.map(Insert::Path),
             path_escaped.map(Insert::PathBuf),
             quoted("\'").map(AsRef::as_ref).map(Insert::Path),
-            preceded('$', take_till(.., char::is_newline)).map(Insert::Var),
+            preceded('$', var).map(Insert::Var),
         ))
         .parse_next(s)
+    }
+
+    fn var<'a>(s: &mut &'a str) -> PResult<Var<'a>> {
+        // let mut line = take_till(.., char::is_newline).recognize().parse_next(s)?;
+        separated(.., ident, '.').map(Var).parse_next(s)
+    }
+    fn ident<'a>(s: &mut &'a str) -> PResult<Ident<'a>> {
+        take_till(.., ('.', '\n', '\r', ' '))
+            .map(Ident)
+            .parse_next(s)
     }
 
     fn path_single<'a>(s: &mut &'a str) -> PResult<&'a Path> {
@@ -145,12 +155,18 @@ mod parser {
                 [
                     Line::Raw("<!DOCTYPE html>",),
                     Line::Raw("  <head>",),
-                    Line::Command(Command::Insert(Insert::Var("page.title",),),),
+                    Line::Command(Command::Insert(Insert::Var(Var(vec![
+                        Ident("page"),
+                        Ident("title")
+                    ])),),),
                     Line::Raw("              <nav id=\"navbar\" style=\"margin-bottom: 0px;\">",),
                     Line::Command(Command::Insert(Insert::Path("nav.html".as_ref(),),),),
                     Line::Raw("              </nav>",),
                     Line::Raw("              <main/>",),
-                    Line::Command(Command::Insert(Insert::Var("page.content",),),),
+                    Line::Command(Command::Insert(Insert::Var(Var(vec![
+                        Ident("page"),
+                        Ident("content"),
+                    ])),),),
                     Line::Raw(
                         "              <aside id=\"leftSidebar\" style=\"margin-right: 0px;\">",
                     ),
@@ -172,9 +188,15 @@ mod parser {
             assert_eq!(
                 parsed,
                 [
-                    Line::Command(Command::Insert(Insert::Var("page.title",),),),
+                    Line::Command(Command::Insert(Insert::Var(Var(vec![
+                        Ident("page"),
+                        Ident("title")
+                    ])),),),
                     Line::Command(Command::Insert(Insert::Path("nav.html".as_ref(),),),),
-                    Line::Command(Command::Insert(Insert::Var("page.content",),),),
+                    Line::Command(Command::Insert(Insert::Var(Var(vec![
+                        Ident("page"),
+                        Ident("content")
+                    ])),),),
                     Line::Command(Command::Insert(Insert::Path("leftbar.html".as_ref(),),),),
                 ],
             )
@@ -219,8 +241,14 @@ mod parser {
             assert_eq!(
                 parsed,
                 [
-                    Line::Command(Command::Insert(Insert::Var("page.title",),),),
-                    Line::Command(Command::Insert(Insert::Var("page.content",),),),
+                    Line::Command(Command::Insert(Insert::Var(Var(vec![
+                        Ident("page"),
+                        Ident("title")
+                    ])),),),
+                    Line::Command(Command::Insert(Insert::Var(Var(vec![
+                        Ident("page"),
+                        Ident("content")
+                    ])),),),
                 ],
             )
         }
