@@ -5,6 +5,7 @@ use std::{
 };
 
 use clap::Parser as _;
+use parser::{Ident, Var};
 use winnow::Parser as _;
 
 fn main() {
@@ -27,23 +28,57 @@ fn main() {
     let template_parsed = parser::lines
         .parse_next(&mut template)
         .expect("parsing error");
+    for source_src in sources {
+        let mut source = File::open(&source_src).expect("opening");
+        let source = {
+            let mut str = String::new();
+            source.read_to_string(&mut str).expect("reading");
+            str
+        };
+        let context = Context {
+            template_src: &template_path,
+            source_file: &source,
+            source_file_src: &source_src,
+            source_name: "source",
+        };
+        apply_template(&template_parsed, &context);
+    }
+}
+
+struct Context<'a> {
+    template_src: &'a Path,
+    source_file: &'a str,
+    source_file_src: &'a Path,
+    source_name: &'a str,
+}
+
+fn apply_template(template_parsed: &[parser::Line], context: &Context) {
     for item in template_parsed {
         match item {
             parser::Line::Raw(r) => println!("{}", r),
             parser::Line::Command(parser::Command::Insert(i)) => match i {
-                parser::Insert::Path(p) => insert_path(&template_path, p),
-                parser::Insert::Var(v) => insert_var(v),
+                parser::Insert::Path(p) => insert_path(context.template_src, p),
+                parser::Insert::Var(v) => insert_var(v, context),
             },
         }
     }
 }
 
-fn insert_var(v: parser::Var<'_>) {
+fn insert_var<'a>(v: &Var, context: &'a Context) -> &'a str {
+    let value = match &*v.0 {
+        [Ident("self"), rest @ ..] => match rest {
+            [Ident("content")] => context.source_file,
+            [Ident("title")] => context.source_name,
+            _ => todo!(),
+        },
+        _ => todo!(),
+    };
     // todo!();
     println!("=== VAR === {:?}", v);
+    value
 }
 
-fn insert_path(from: &Path, p: parser::Path<'_>) {
+fn insert_path(from: &Path, p: &parser::Path<'_>) {
     let mut path = from
         .parent()
         .expect("path is to a file, so it must have a parent")
@@ -101,9 +136,9 @@ mod parser {
         }
     }
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-    pub struct Ident<'a>(&'a str);
+    pub struct Ident<'a>(pub &'a str);
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-    pub struct Var<'a>(Vec<Ident<'a>>);
+    pub struct Var<'a>(pub Vec<Ident<'a>>);
 
     pub fn lines<'a>(s: &mut &'a str) -> PResult<Vec<Line<'a>>> {
         separated(.., line, line_end).parse_next(s)
