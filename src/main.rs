@@ -1,4 +1,5 @@
 use std::{
+    fs::File,
     io::Read,
     path::{Path, PathBuf},
 };
@@ -7,11 +8,13 @@ use clap::Parser as _;
 use winnow::Parser as _;
 
 fn main() {
-    let App { template } = App::parse();
+    let App {
+        template: template_path,
+    } = App::parse();
     let template = {
         let mut template = std::fs::OpenOptions::new()
             .read(true)
-            .open(template)
+            .open(&template_path)
             .expect("Could not open template file");
         let mut s = String::new();
         template
@@ -23,12 +26,11 @@ fn main() {
     let template_parsed = parser::lines
         .parse_next(&mut template)
         .expect("parsing error");
-    println!("({:#?}), {}", template_parsed, template);
     for item in template_parsed {
         match item {
             parser::Line::Raw(r) => println!("{}", r),
             parser::Line::Command(parser::Command::Insert(i)) => match i {
-                parser::Insert::Path(p) => insert_path(p),
+                parser::Insert::Path(p) => insert_path(&template_path, p),
                 parser::Insert::Var(v) => insert_var(v),
             },
         }
@@ -39,8 +41,18 @@ fn insert_var(v: parser::Var<'_>) {
     todo!()
 }
 
-fn insert_path(p: parser::Path<'_>) {
-    todo!()
+fn insert_path(from: &Path, p: parser::Path<'_>) {
+    let mut path = from
+        .parent()
+        .expect("path is to a file, so it must have a parent")
+        .to_path_buf();
+    path.push(p);
+    let mut s = String::new();
+    File::open(path)
+        .expect("could not open")
+        .read_to_string(&mut s)
+        .expect("falied to read");
+    println!("{}", s);
 }
 
 #[derive(clap::Parser)]
@@ -76,6 +88,14 @@ mod parser {
     pub enum Path<'a> {
         Path(&'a FilePath),
         PathBuf(FilePathBuf),
+    }
+    impl AsRef<FilePath> for Path<'_> {
+        fn as_ref(&self) -> &FilePath {
+            match self {
+                Path::Path(p) => p,
+                Path::PathBuf(p) => &p,
+            }
+        }
     }
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub struct Ident<'a>(&'a str);
