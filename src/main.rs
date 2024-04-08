@@ -1,7 +1,10 @@
-use std::{io::Read, path::PathBuf};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use clap::Parser as _;
-use winnow::Parser;
+use winnow::Parser as _;
 
 fn main() {
     let App { template } = App::parse();
@@ -17,8 +20,27 @@ fn main() {
         s
     };
     let mut template = template.as_str();
-    let template_parsed = parser::lines.parse_next(&mut template);
+    let template_parsed = parser::lines
+        .parse_next(&mut template)
+        .expect("parsing error");
     println!("({:#?}), {}", template_parsed, template);
+    for item in template_parsed {
+        match item {
+            parser::Line::Raw(r) => println!("{}", r),
+            parser::Line::Command(parser::Command::Insert(i)) => match i {
+                parser::Insert::Path(p) => insert_path(p),
+                parser::Insert::Var(v) => insert_var(v),
+            },
+        }
+    }
+}
+
+fn insert_var(v: parser::Var<'_>) {
+    todo!()
+}
+
+fn insert_path(p: parser::Path<'_>) {
+    todo!()
 }
 
 #[derive(clap::Parser)]
