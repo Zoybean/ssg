@@ -10,6 +10,7 @@ use winnow::Parser as _;
 fn main() {
     let App {
         template: template_path,
+        sources,
     } = App::parse();
     let template = {
         let mut template = std::fs::OpenOptions::new()
@@ -59,6 +60,7 @@ fn insert_path(from: &Path, p: parser::Path<'_>) {
 #[derive(clap::Parser)]
 pub struct App {
     template: PathBuf,
+    sources: Vec<PathBuf>,
 }
 
 mod parser {
