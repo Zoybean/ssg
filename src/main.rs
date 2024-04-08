@@ -93,36 +93,28 @@ mod parser {
 
     fn path<'a>(s: &mut &'a str) -> PResult<Path<'a>> {
         alt((
-            path_single.map(Path::Path),
-            path_double_unescaped.map(Path::Path),
-            path_double_escaped.map(Path::PathBuf),
+            str_single.map(AsRef::as_ref).map(Path::Path),
+            str_double_unescaped.map(AsRef::as_ref).map(Path::Path),
+            str_double_escaped.map(Into::into).map(Path::PathBuf),
         ))
         .parse_next(s)
     }
-    fn path_single<'a>(s: &mut &'a str) -> PResult<&'a FilePath> {
-        quoted("\'").map(AsRef::as_ref).parse_next(s)
+    fn str_single<'a>(s: &mut &'a str) -> PResult<&'a str> {
+        delimited('\'', take_till(.., ('\'', char::is_newline)), '\'').parse_next(s)
     }
-    fn path_double_unescaped<'a>(s: &mut &'a str) -> PResult<&'a FilePath> {
-        quoted("\"")
-            .verify(|s: &str| !s.contains('\\'))
-            .map(AsRef::as_ref)
-            .parse_next(s)
+    fn str_double_unescaped<'a>(s: &mut &'a str) -> PResult<&'a str> {
+        delimited('"', string_noescape, '"').parse_next(s)
     }
-    fn path_double_escaped<'a>(s: &mut &'a str) -> PResult<FilePathBuf> {
-        delimited('"', string_escaped.map(String::into), '"').parse_next(s)
+    fn str_double_escaped<'a>(s: &mut &'a str) -> PResult<String> {
+        delimited('"', string_escaped, '"').parse_next(s)
     }
-
     fn string_escaped(s: &mut &str) -> PResult<String> {
-        escaped_transform(
-            repeat::<_, _, (), _, _>(1.., none_of(('"', '\\'))).recognize(),
-            '\\',
-            escape,
-        )
-        .parse_next(s)
+        escaped_transform(string_noescape, '\\', escape).parse_next(s)
     }
-
-    fn quoted(q: &str) -> impl Parser<&str, &str, winnow::error::ContextError> {
-        delimited(q, take_until(.., q), q)
+    fn string_noescape<'a>(s: &mut &'a str) -> PResult<&'a str> {
+        take_till(1.., ('"', '\\', char::is_newline))
+            .recognize()
+            .parse_next(s)
     }
 
     fn escape<'a, 'o>(s: &mut &'a str) -> PResult<&'o str> {
@@ -235,8 +227,8 @@ mod parser {
         #[test]
         fn path_escaped() {
             let mut f = r#""nav\r\".h\ntml""#;
-            let parsed: FilePathBuf = super::path_double_escaped(&mut f).expect("parse failed");
-            assert_eq!(parsed, FilePathBuf::from("nav\r\".h\ntml"))
+            let parsed = super::str_double_escaped(&mut f).expect("parse failed");
+            assert_eq!(parsed, "nav\r\".h\ntml")
         }
         #[test]
         fn basic_escaped() {
@@ -260,6 +252,12 @@ mod parser {
                 parser.parse_peek("ab\\ncd"),
                 Ok(("", String::from("ab\ncd")))
             );
+        }
+        #[test]
+        fn empty_string_escaped() {
+            let mut f = "";
+            let parsed: String = super::string_escaped(&mut f).expect("parse failed");
+            assert_eq!(parsed, "")
         }
         #[test]
         fn string_escaped() {
