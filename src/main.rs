@@ -27,13 +27,13 @@ pub struct App {
 }
 
 mod parser {
-    use std::path::{Path, PathBuf};
+    use std::path::{Path as FilePath, PathBuf as FilePathBuf};
 
     use winnow::{
         ascii::escaped_transform,
         combinator::{alt, cut_err, delimited, preceded, repeat, rest, separated},
         stream::AsChar,
-        token::{any, literal, take_till, take_until},
+        token::{any, literal, none_of, take_till, take_until},
         PResult, Parser,
     };
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -47,9 +47,13 @@ mod parser {
     }
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Insert<'a> {
-        Path(&'a Path),
+        Path(Path<'a>),
         Var(&'a str),
-        PathBuf(PathBuf),
+    }
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub enum Path<'a> {
+        Path(&'a FilePath),
+        PathBuf(FilePathBuf),
     }
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub struct Ident<'a>(&'a str);
@@ -81,26 +85,38 @@ mod parser {
     }
     fn insert<'a>(s: &mut &'a str) -> PResult<Insert<'a>> {
         alt((
-            path_single.map(Insert::Path),
-            path_unescaped.map(Insert::Path),
-            path_escaped.map(Insert::PathBuf),
-            quoted("\'").map(AsRef::as_ref).map(Insert::Path),
+            path.map(Insert::Path),
             preceded('$', take_till(.., char::is_newline)).map(Insert::Var),
         ))
         .parse_next(s)
     }
 
-    fn path_single<'a>(s: &mut &'a str) -> PResult<&'a Path> {
+    fn path<'a>(s: &mut &'a str) -> PResult<Path<'a>> {
+        alt((
+            path_single.map(Path::Path),
+            path_double_unescaped.map(Path::Path),
+            path_double_escaped.map(Path::PathBuf),
+        ))
+        .parse_next(s)
+    }
+    fn path_single<'a>(s: &mut &'a str) -> PResult<&'a FilePath> {
         quoted("\'").map(AsRef::as_ref).parse_next(s)
     }
-    fn path_unescaped<'a>(s: &mut &'a str) -> PResult<&'a Path> {
-        quoted("\"").map(AsRef::as_ref).parse_next(s)
+    fn path_double_unescaped<'a>(s: &mut &'a str) -> PResult<&'a FilePath> {
+        quoted("\"")
+            .verify(|s: &str| !s.contains('\\'))
+            .map(AsRef::as_ref)
+            .parse_next(s)
     }
-    fn path_escaped<'a>(s: &mut &'a str) -> PResult<PathBuf> {
-        delimited(
-            '"',
-            escaped_transform(take_until(.., '"'), '\\', escape).map(String::into),
-            '"',
+    fn path_double_escaped<'a>(s: &mut &'a str) -> PResult<FilePathBuf> {
+        delimited('"', string_escaped.map(String::into), '"').parse_next(s)
+    }
+
+    fn string_escaped(s: &mut &str) -> PResult<String> {
+        escaped_transform(
+            repeat::<_, _, (), _, _>(1.., none_of(('"', '\\'))).recognize(),
+            '\\',
+            escape,
         )
         .parse_next(s)
     }
@@ -147,14 +163,18 @@ mod parser {
                     Line::Raw("  <head>",),
                     Line::Command(Command::Insert(Insert::Var("page.title",),),),
                     Line::Raw("              <nav id=\"navbar\" style=\"margin-bottom: 0px;\">",),
-                    Line::Command(Command::Insert(Insert::Path("nav.html".as_ref(),),),),
+                    Line::Command(Command::Insert(Insert::Path(Path::Path(
+                        "nav.html".as_ref()
+                    ),),),),
                     Line::Raw("              </nav>",),
                     Line::Raw("              <main/>",),
                     Line::Command(Command::Insert(Insert::Var("page.content",),),),
                     Line::Raw(
                         "              <aside id=\"leftSidebar\" style=\"margin-right: 0px;\">",
                     ),
-                    Line::Command(Command::Insert(Insert::Path("leftbar.html".as_ref(),),),),
+                    Line::Command(Command::Insert(Insert::Path(Path::Path(
+                        "leftbar.html".as_ref(),
+                    )),),),
                     Line::Raw("              </aside>",),
                     Line::Raw("            </div>",),
                     Line::Raw("",),
@@ -173,9 +193,13 @@ mod parser {
                 parsed,
                 [
                     Line::Command(Command::Insert(Insert::Var("page.title",),),),
-                    Line::Command(Command::Insert(Insert::Path("nav.html".as_ref(),),),),
+                    Line::Command(Command::Insert(Insert::Path(Path::Path(
+                        "nav.html".as_ref()
+                    ),),),),
                     Line::Command(Command::Insert(Insert::Var("page.content",),),),
-                    Line::Command(Command::Insert(Insert::Path("leftbar.html".as_ref(),),),),
+                    Line::Command(Command::Insert(Insert::Path(Path::Path(
+                        "leftbar.html".as_ref()
+                    ),),),),
                 ],
             )
         }
@@ -188,8 +212,12 @@ mod parser {
             assert_eq!(
                 parsed,
                 [
-                    Line::Command(Command::Insert(Insert::Path("nav.html".as_ref(),),),),
-                    Line::Command(Command::Insert(Insert::Path("leftbar.html".as_ref(),),),),
+                    Line::Command(Command::Insert(Insert::Path(Path::Path(
+                        "nav.html".as_ref()
+                    ),),),),
+                    Line::Command(Command::Insert(Insert::Path(Path::Path(
+                        "leftbar.html".as_ref()
+                    ),),),),
                 ],
             )
         }
@@ -199,16 +227,45 @@ mod parser {
             let parsed = super::lines(&mut f).expect("parse failed");
             assert_eq!(
                 parsed,
-                [Line::Command(Command::Insert(Insert::PathBuf(
+                [Line::Command(Command::Insert(Insert::Path(Path::PathBuf(
                     "nav\r\".h\ntml".into(),
-                ),),),],
+                )),),),],
             )
         }
         #[test]
         fn path_escaped() {
             let mut f = r#""nav\r\".h\ntml""#;
-            let parsed: PathBuf = super::path_escaped(&mut f).expect("parse failed");
-            assert_eq!(parsed, PathBuf::from("nav\r\".h\ntml"))
+            let parsed: FilePathBuf = super::path_double_escaped(&mut f).expect("parse failed");
+            assert_eq!(parsed, FilePathBuf::from("nav\r\".h\ntml"))
+        }
+        #[test]
+        fn basic_escaped() {
+            use winnow::ascii::alpha0;
+            use winnow::ascii::alpha1;
+            use winnow::ascii::escaped_transform;
+            use winnow::prelude::*;
+            use winnow::token::none_of;
+
+            fn parser<'s>(input: &mut &'s str) -> PResult<String> {
+                let normal = repeat(1.., none_of(('"', '\\'))).fold(|| (), |(), _| ());
+                escaped_transform(normal.recognize(), '\\', super::escape).parse_next(input)
+                // escaped_transform(alpha1, '\\', super::escape).parse_next(input)
+            }
+
+            assert_eq!(
+                parser.parse_peek("ab\\\"cd"),
+                Ok(("", String::from("ab\"cd")))
+            );
+            assert_eq!(
+                parser.parse_peek("ab\\ncd"),
+                Ok(("", String::from("ab\ncd")))
+            );
+        }
+        #[test]
+        fn string_escaped() {
+            let mut f = r#"nav\r\".h\ntml"#;
+            let parsed: String = super::string_escaped(&mut f).expect("parse failed");
+            assert_eq!(parsed, "nav\r\".h\ntml")
         }
         #[test]
         fn insert_var() {
