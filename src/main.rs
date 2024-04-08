@@ -38,7 +38,8 @@ fn main() {
 }
 
 fn insert_var(v: parser::Var<'_>) {
-    todo!()
+    // todo!();
+    println!("=== VAR === {:?}", v);
 }
 
 fn insert_path(from: &Path, p: parser::Path<'_>) {
