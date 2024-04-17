@@ -34,25 +34,15 @@ fn main() {
     let template_parsed = parser::lines
         .parse_next(&mut template)
         .expect("parsing error");
-    std::fs::create_dir(&to_dir).expect("creating output dir");
+    std::fs::create_dir_all(&to_dir).expect("creating output dir");
     for entry in read_dir(&from_dir).expect("read dir") {
         let source_path = entry.expect("reading dir entry").path();
-        let source = read_string(&source_path);
-        let context = Context {
-            template_path: &template_path,
-            source_file: &source,
-            source_file_path: &source_path,
-            source_title: "Candy Corvid",
-        };
-        let out = apply_template(&template_parsed, &context);
-        let out_path = path_for(&from_dir, to_dir.clone(), &source_path);
-        let mut out_file = File::create(&out_path).expect("open output file");
-        write!(&mut out_file, "{}", out).expect("write output file");
-        println!(
-            "wrote file '{}' from template '{}' and content '{}'",
-            out_path.display(),
-            template_path.display(),
-            source_path.display()
+        convert_template_file(
+            source_path,
+            &template_path,
+            &template_parsed,
+            &from_dir,
+            &to_dir,
         );
     }
     if let Some(asset_dir) = asset_dir {
@@ -65,6 +55,42 @@ fn main() {
     }
 }
 
+fn convert_template_file(
+    source_path: PathBuf,
+    template_path: &PathBuf,
+    template_parsed: &Vec<parser::Line<'_>>,
+    from_dir: &PathBuf,
+    to_dir: &PathBuf,
+) {
+    let mut buf = String::new();
+    let context = load_context(&source_path, template_path, &mut buf);
+    let out = apply_template(template_parsed, &context);
+    let out_path = path_for(from_dir, to_dir.clone(), &context.source_file_path);
+    let mut out_file = File::create(&out_path).expect("open output file");
+    write!(&mut out_file, "{}", out).expect("write output file");
+    println!(
+        "wrote file '{}' from template '{}' and content '{}'",
+        out_path.display(),
+        template_path.display(),
+        context.source_file_path.display()
+    );
+}
+
+fn load_context<'a>(
+    source_path: &'a Path,
+    template_path: &'a Path,
+    file_buffer: &'a mut String,
+) -> Context<'a> {
+    *file_buffer = read_string(&source_path).expect("reading source");
+    let context = Context {
+        template_path,
+        source_file: &*file_buffer,
+        source_file_path: &source_path,
+        source_title: "Candy Corvid",
+    };
+    context
+}
+
 fn path_for(in_root: &Path, mut out_root: PathBuf, path: &Path) -> PathBuf {
     out_root.push(
         path.strip_prefix(in_root)
@@ -73,13 +99,10 @@ fn path_for(in_root: &Path, mut out_root: PathBuf, path: &Path) -> PathBuf {
     out_root
 }
 
-fn read_string(path: &Path) -> String {
+fn read_string(path: &Path) -> Result<String, std::io::Error> {
     let mut s = String::new();
-    File::open(path)
-        .expect("could not open")
-        .read_to_string(&mut s)
-        .expect("failed to read");
-    s
+    File::open(path)?.read_to_string(&mut s)?;
+    Ok(s)
 }
 
 struct Context<'a> {
@@ -97,7 +120,10 @@ fn apply_template(template_parsed: &[parser::Line], context: &Context) -> String
             parser::Line::Raw(r) => r,
             parser::Line::Command(parser::Command::Insert(i)) => match i {
                 parser::Insert::Path(p) => {
-                    store = load(context.template_path, p);
+                    store = load(context.template_path, p).expect(&format!(
+                        "failed to resolve path template: {}",
+                        p.as_ref().display()
+                    ));
                     store.as_str()
                 }
                 parser::Insert::Var(v) => evaluate(v, context),
@@ -120,13 +146,13 @@ fn evaluate<'a>(v: &Var, context: &'a Context) -> &'a str {
     value
 }
 
-fn load(from: &Path, p: &parser::Path<'_>) -> String {
+fn load(from: &Path, p: &parser::Path<'_>) -> Result<String, std::io::Error> {
     let mut path = from
         .parent()
         .expect("path is to a file, so it must have a parent")
         .to_path_buf();
     path.push(p);
-    read_string(&path)
+    Ok(read_string(&path)?)
 }
 
 #[derive(clap::Parser)]
