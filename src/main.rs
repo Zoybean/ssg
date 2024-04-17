@@ -7,8 +7,9 @@ use std::{
 };
 
 use clap::Parser as _;
-use parser::{Ident, Var};
 use winnow::Parser as _;
+
+use parser::{Ident, Var};
 
 fn main() {
     let App {
@@ -123,9 +124,9 @@ mod parser {
 
     use winnow::{
         ascii::escaped_transform,
-        combinator::{alt, cut_err, delimited, preceded, repeat, rest, separated},
+        combinator::{alt, cut_err, delimited, preceded, separated},
         stream::AsChar,
-        token::{any, literal, none_of, take_till, take_until},
+        token::take_till,
         PResult, Parser,
     };
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -235,6 +236,8 @@ mod parser {
     }
     #[cfg(test)]
     mod test {
+        use winnow::combinator::repeat;
+
         use super::*;
         #[test]
         fn full_parse() {
@@ -349,8 +352,6 @@ mod parser {
         }
         #[test]
         fn basic_escaped() {
-            use winnow::ascii::alpha0;
-            use winnow::ascii::alpha1;
             use winnow::ascii::escaped_transform;
             use winnow::prelude::*;
             use winnow::token::none_of;
