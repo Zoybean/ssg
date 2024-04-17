@@ -34,6 +34,7 @@ fn main() {
     let template_parsed = parser::lines
         .parse_next(&mut template)
         .expect("parsing error");
+    std::fs::create_dir(&to_dir).expect("creating output dir");
     for entry in read_dir(&from_dir).expect("read dir") {
         let source_path = entry.expect("reading dir entry").path();
         let source = read_string(&source_path);
