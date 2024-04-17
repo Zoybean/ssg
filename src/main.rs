@@ -28,13 +28,8 @@ fn main() {
     let template_parsed = parser::lines
         .parse_next(&mut template)
         .expect("parsing error");
-    for source_src in sources {
-        let mut source = File::open(&source_src).expect("opening");
-        let source = {
-            let mut str = String::new();
-            source.read_to_string(&mut str).expect("reading");
-            str
-        };
+    for source_path in sources {
+        let source = read_string(&source_path);
         let context = Context {
             template_src: &template_path,
             source_file: &source,
@@ -43,6 +38,15 @@ fn main() {
         };
         apply_template(&template_parsed, &context);
     }
+}
+
+fn read_string(path: &Path) -> String {
+    let mut s = String::new();
+    File::open(path)
+        .expect("could not open")
+        .read_to_string(&mut s)
+        .expect("failed to read");
+    s
 }
 
 struct Context<'a> {
@@ -84,12 +88,9 @@ fn insert_path(from: &Path, p: &parser::Path<'_>) {
         .expect("path is to a file, so it must have a parent")
         .to_path_buf();
     path.push(p);
-    let mut s = String::new();
-    File::open(path)
-        .expect("could not open")
-        .read_to_string(&mut s)
-        .expect("falied to read");
+    let s = read_string(&path);
     println!("{}", s);
+    s
 }
 
 #[derive(clap::Parser)]
