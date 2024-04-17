@@ -19,21 +19,8 @@ fn main() {
         output_page_dir: to_dir,
         asset_dir,
     } = App::parse();
-    let template = {
-        let mut template = std::fs::OpenOptions::new()
-            .read(true)
-            .open(&template_path)
-            .expect("Could not open template file");
-        let mut s = String::new();
-        template
-            .read_to_string(&mut s)
-            .expect("could not read template file");
-        s
-    };
-    let mut template = template.as_str();
-    let template_parsed = parser::lines
-        .parse_next(&mut template)
-        .expect("parsing error");
+    let mut buf = String::new();
+    let template_parsed = load_template(&mut buf, &template_path);
     std::fs::create_dir_all(&to_dir).expect("creating output dir");
     for entry in read_dir(&from_dir).expect("read dir") {
         let source_path = entry.expect("reading dir entry").path();
@@ -53,6 +40,23 @@ fn main() {
         )
         .expect("copy assets");
     }
+}
+
+fn load_template<'a>(buffer: &'a mut String, template_path: &PathBuf) -> Vec<parser::Line<'a>> {
+    let mut template = {
+        let mut template = std::fs::OpenOptions::new()
+            .read(true)
+            .open(template_path)
+            .expect("Could not open template file");
+        template
+            .read_to_string(buffer)
+            .expect("could not read template file");
+        buffer.as_str()
+    };
+    let template_parsed = parser::lines
+        .parse_next(&mut template)
+        .expect("parsing error");
+    template_parsed
 }
 
 fn convert_template_file(
