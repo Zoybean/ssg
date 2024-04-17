@@ -1,6 +1,8 @@
 use std::{
-    fs::File,
+    fmt::Write as _,
+    fs::{read_dir, File},
     io::Read,
+    io::Write as _,
     path::{Path, PathBuf},
 };
 
@@ -11,7 +13,8 @@ use winnow::Parser as _;
 fn main() {
     let App {
         template: template_path,
-        sources,
+        input_page_dir,
+        output_page_dir,
     } = App::parse();
     let template = {
         let mut template = std::fs::OpenOptions::new()
@@ -28,16 +31,28 @@ fn main() {
     let template_parsed = parser::lines
         .parse_next(&mut template)
         .expect("parsing error");
-    for source_path in sources {
+    for entry in read_dir(&input_page_dir).expect("read dir") {
+        let source_path = entry.expect("reading dir entry").path();
         let source = read_string(&source_path);
         let context = Context {
-            template_src: &template_path,
+            template_path: &template_path,
             source_file: &source,
-            source_file_src: &source_src,
-            source_name: "source",
+            source_file_path: &source_path,
+            source_title: "Candy Corvid",
         };
-        apply_template(&template_parsed, &context);
+        let out = apply_template(&template_parsed, &context);
+        let out_path = path_for(&input_page_dir, output_page_dir.clone(), &source_path);
+        let mut out_file = File::create(out_path).expect("open output file");
+        write!(&mut out_file, "{}", out).expect("write output file");
     }
+}
+
+fn path_for(in_root: &Path, mut out_root: PathBuf, path: &Path) -> PathBuf {
+    out_root.push(
+        path.strip_prefix(in_root)
+            .expect("input path should be in input dir"),
+    );
+    out_root
 }
 
 fn read_string(path: &Path) -> String {
@@ -50,53 +65,57 @@ fn read_string(path: &Path) -> String {
 }
 
 struct Context<'a> {
-    template_src: &'a Path,
+    template_path: &'a Path,
     source_file: &'a str,
-    source_file_src: &'a Path,
-    source_name: &'a str,
+    source_file_path: &'a Path,
+    source_title: &'a str,
 }
 
-fn apply_template(template_parsed: &[parser::Line], context: &Context) {
+fn apply_template(template_parsed: &[parser::Line], context: &Context) -> String {
+    let mut agg = String::new();
     for item in template_parsed {
-        match item {
-            parser::Line::Raw(r) => println!("{}", r),
+        let store;
+        let val = match item {
+            parser::Line::Raw(r) => r,
             parser::Line::Command(parser::Command::Insert(i)) => match i {
-                parser::Insert::Path(p) => insert_path(context.template_src, p),
-                parser::Insert::Var(v) => insert_var(v, context),
+                parser::Insert::Path(p) => {
+                    store = load(context.template_path, p);
+                    store.as_str()
+                }
+                parser::Insert::Var(v) => evaluate(v, context),
             },
-        }
+        };
+        writeln!(&mut agg, "{}", val).unwrap();
     }
+    agg
 }
 
-fn insert_var<'a>(v: &Var, context: &'a Context) -> &'a str {
+fn evaluate<'a>(v: &Var, context: &'a Context) -> &'a str {
     let value = match &*v.0 {
         [Ident("self"), rest @ ..] => match rest {
             [Ident("content")] => context.source_file,
-            [Ident("title")] => context.source_name,
-            _ => todo!(),
+            [Ident("title")] => context.source_title,
+            _ => todo!("unknown variable"),
         },
-        _ => todo!(),
+        _ => todo!("unknown variable"),
     };
-    // todo!();
-    println!("=== VAR === {:?}", v);
     value
 }
 
-fn insert_path(from: &Path, p: &parser::Path<'_>) {
+fn load(from: &Path, p: &parser::Path<'_>) -> String {
     let mut path = from
         .parent()
         .expect("path is to a file, so it must have a parent")
         .to_path_buf();
     path.push(p);
-    let s = read_string(&path);
-    println!("{}", s);
-    s
+    read_string(&path)
 }
 
 #[derive(clap::Parser)]
 pub struct App {
     template: PathBuf,
-    sources: Vec<PathBuf>,
+    input_page_dir: PathBuf,
+    output_page_dir: PathBuf,
 }
 
 mod parser {
