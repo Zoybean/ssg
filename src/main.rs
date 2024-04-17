@@ -16,6 +16,7 @@ fn main() {
         template: template_path,
         input_page_dir: from_dir,
         output_page_dir: to_dir,
+        asset_dir,
     } = App::parse();
     let template = {
         let mut template = std::fs::OpenOptions::new()
@@ -51,6 +52,8 @@ fn main() {
             template_path.display(),
             source_path.display()
         );
+    }
+    if let Some(asset_dir) = asset_dir {
     }
 }
 
@@ -123,6 +126,7 @@ pub struct App {
     template: PathBuf,
     input_page_dir: PathBuf,
     output_page_dir: PathBuf,
+    asset_dir: Option<PathBuf>,
 }
 
 mod parser {
