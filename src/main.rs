@@ -7,6 +7,7 @@ use std::{
 };
 
 use clap::Parser as _;
+use fs_extra::dir::CopyOptions;
 use winnow::Parser as _;
 
 use parser::{Ident, Var};
@@ -54,6 +55,12 @@ fn main() {
         );
     }
     if let Some(asset_dir) = asset_dir {
+        fs_extra::dir::copy(
+            &asset_dir,
+            to_dir,
+            &CopyOptions::new().overwrite(true).content_only(true),
+        )
+        .expect("copy assets");
     }
 }
 
