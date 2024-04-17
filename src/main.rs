@@ -15,9 +15,9 @@ use parser::{Ident, Var};
 fn main() {
     let App {
         template: template_path,
-        input_page_dir: from_dir,
-        output_page_dir: to_dir,
-        asset_dir,
+        source_dir: from_dir,
+        output: to_dir,
+        assets: asset_dir,
     } = App::parse();
     let mut buf = String::new();
     let template_parsed = load_template(&mut buf, &template_path);
@@ -160,11 +160,20 @@ fn load(from: &Path, p: &parser::Path<'_>) -> Result<String, std::io::Error> {
 }
 
 #[derive(clap::Parser)]
+/// Static site generator with a fairly simple syntax
 pub struct App {
+    /// Path to directory containing page content files. The template will be applied to each file in this directory
+    #[arg(short, long, alias = "source")]
+    source_dir: PathBuf,
+    /// Path to the primary template file
+    #[arg(short, long)]
     template: PathBuf,
-    input_page_dir: PathBuf,
-    output_page_dir: PathBuf,
-    asset_dir: Option<PathBuf>,
+    /// Path to the directory that the output will be written to
+    #[arg(short = 'o', long, alias = "target")]
+    output: PathBuf,
+    /// Path to the directory containing files that will be pasted to the output dir, unmodified.
+    #[arg(short, long)]
+    assets: Option<PathBuf>,
 }
 
 mod parser {
