@@ -14,8 +14,8 @@ use parser::{Ident, Var};
 fn main() {
     let App {
         template: template_path,
-        input_page_dir,
-        output_page_dir,
+        input_page_dir: from_dir,
+        output_page_dir: to_dir,
     } = App::parse();
     let template = {
         let mut template = std::fs::OpenOptions::new()
@@ -32,7 +32,7 @@ fn main() {
     let template_parsed = parser::lines
         .parse_next(&mut template)
         .expect("parsing error");
-    for entry in read_dir(&input_page_dir).expect("read dir") {
+    for entry in read_dir(&from_dir).expect("read dir") {
         let source_path = entry.expect("reading dir entry").path();
         let source = read_string(&source_path);
         let context = Context {
@@ -42,9 +42,15 @@ fn main() {
             source_title: "Candy Corvid",
         };
         let out = apply_template(&template_parsed, &context);
-        let out_path = path_for(&input_page_dir, output_page_dir.clone(), &source_path);
-        let mut out_file = File::create(out_path).expect("open output file");
+        let out_path = path_for(&from_dir, to_dir.clone(), &source_path);
+        let mut out_file = File::create(&out_path).expect("open output file");
         write!(&mut out_file, "{}", out).expect("write output file");
+        println!(
+            "wrote file '{}' from template '{}' and content '{}'",
+            out_path.display(),
+            template_path.display(),
+            source_path.display()
+        );
     }
 }
 
