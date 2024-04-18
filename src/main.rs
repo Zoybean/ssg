@@ -79,7 +79,7 @@ fn convert_template_file(
         source_file: &source_content,
         source_title: "Candy Corvid",
     };
-    let out_path = path_for(from_dir, to_dir, &context.source_file_path);
+    let out_path = path_for(from_dir, to_dir, &context.source_file_path, None);
     let mut out_file = File::create(&out_path).expect("open output file");
 
     println!(
@@ -92,11 +92,22 @@ fn convert_template_file(
     write!(&mut out_file, "{}", out).expect("write output file");
 }
 
-fn path_for(in_root: &Path, mut out_root: PathBuf, path: &Path) -> PathBuf {
+/// get the output path corresponding to the given input path
+fn path_for(
+    in_root: &Path,
+    mut out_root: PathBuf,
+    path: &Path,
+    strip_extension: Option<&str>,
+) -> PathBuf {
     out_root.push(
         path.strip_prefix(in_root)
             .expect("input path should be in input dir"),
     );
+    if let Some(suf) = strip_extension {
+        if out_root.extension() == Some(suf.as_ref()) {
+            out_root.set_extension("");
+        }
+    }
     out_root
 }
 
