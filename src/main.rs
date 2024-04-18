@@ -12,6 +12,23 @@ use winnow::Parser as _;
 
 use parser::{Ident, Var};
 
+#[derive(clap::Parser)]
+/// Static site generator with a fairly simple syntax
+pub struct App {
+    /// Path to directory containing page content files. The template will be applied to each file in this directory
+    #[arg(short, long, alias = "source")]
+    source_dir: PathBuf,
+    /// Path to the primary template file
+    #[arg(short, long)]
+    template: PathBuf,
+    /// Path to the directory that the output will be written to
+    #[arg(short = 'o', long, alias = "target")]
+    output: PathBuf,
+    /// Path to the directory containing files that will be pasted to the output dir, unmodified.
+    #[arg(short, long)]
+    assets: Option<PathBuf>,
+}
+
 fn main() {
     let App {
         template: template_path,
@@ -166,23 +183,6 @@ fn load(from: &Path, p: &parser::Path<'_>) -> Result<String, std::io::Error> {
         .to_path_buf();
     path.push(p);
     Ok(read_string(&path)?)
-}
-
-#[derive(clap::Parser)]
-/// Static site generator with a fairly simple syntax
-pub struct App {
-    /// Path to directory containing page content files. The template will be applied to each file in this directory
-    #[arg(short, long, alias = "source")]
-    source_dir: PathBuf,
-    /// Path to the primary template file
-    #[arg(short, long)]
-    template: PathBuf,
-    /// Path to the directory that the output will be written to
-    #[arg(short = 'o', long, alias = "target")]
-    output: PathBuf,
-    /// Path to the directory containing files that will be pasted to the output dir, unmodified.
-    #[arg(short, long)]
-    assets: Option<PathBuf>,
 }
 
 mod parser {
