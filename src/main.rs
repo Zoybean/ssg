@@ -15,27 +15,32 @@ use parser::{Ident, Var};
 fn main() {
     let App {
         template: template_path,
-        source_dir: from_dir,
-        output: to_dir,
-        assets: asset_dir,
+        source_dir,
+        output,
+        assets: assets_dir,
     } = App::parse();
     let mut buf = String::new();
     let template_parsed = load_template(&mut buf, &template_path);
-    std::fs::create_dir_all(&to_dir).expect("creating output dir");
-    for entry in read_dir(&from_dir).expect("read dir") {
+    std::fs::create_dir_all(&output).expect("creating output dir");
+    for entry in read_dir(&source_dir).expect("read dir") {
         let source_path = entry.expect("reading dir entry").path();
         convert_template_file(
-            source_path,
+            &source_path,
             &template_path,
             &template_parsed,
-            &from_dir,
-            &to_dir,
+            &source_dir,
+            output.clone(),
         );
     }
-    if let Some(asset_dir) = asset_dir {
+    if let Some(assets_dir) = assets_dir {
+        println!(
+            "copying files from '{}' to '{}'",
+            assets_dir.display(),
+            output.display()
+        );
         fs_extra::dir::copy(
-            &asset_dir,
-            to_dir,
+            &assets_dir,
+            output,
             &CopyOptions::new().overwrite(true).content_only(true),
         )
         .expect("copy assets");
@@ -60,39 +65,31 @@ fn load_template<'a>(buffer: &'a mut String, template_path: &PathBuf) -> Vec<par
 }
 
 fn convert_template_file(
-    source_path: PathBuf,
-    template_path: &PathBuf,
-    template_parsed: &Vec<parser::Line<'_>>,
-    from_dir: &PathBuf,
-    to_dir: &PathBuf,
+    source_path: &Path,
+    template_path: &Path,
+    template_parsed: &[parser::Line],
+    from_dir: &Path,
+    to_dir: PathBuf,
 ) {
-    let mut buf = String::new();
-    let context = load_context(&source_path, template_path, &mut buf);
-    let out = apply_template(template_parsed, &context);
-    let out_path = path_for(from_dir, to_dir.clone(), &context.source_file_path);
+    let source_content = read_string(&source_path).expect("reading source");
+    let context = Context {
+        template_path,
+        template_parsed,
+        source_file_path: &source_path,
+        source_file: &source_content,
+        source_title: "Candy Corvid",
+    };
+    let out_path = path_for(from_dir, to_dir, &context.source_file_path);
     let mut out_file = File::create(&out_path).expect("open output file");
-    write!(&mut out_file, "{}", out).expect("write output file");
+
     println!(
-        "wrote file '{}' from template '{}' and content '{}'",
+        "writing file '{}' from template '{}' and content '{}'",
         out_path.display(),
         template_path.display(),
         context.source_file_path.display()
     );
-}
-
-fn load_context<'a>(
-    source_path: &'a Path,
-    template_path: &'a Path,
-    file_buffer: &'a mut String,
-) -> Context<'a> {
-    *file_buffer = read_string(&source_path).expect("reading source");
-    let context = Context {
-        template_path,
-        source_file: &*file_buffer,
-        source_file_path: &source_path,
-        source_title: "Candy Corvid",
-    };
-    context
+    let out = apply_template(&context);
+    write!(&mut out_file, "{}", out).expect("write output file");
 }
 
 fn path_for(in_root: &Path, mut out_root: PathBuf, path: &Path) -> PathBuf {
@@ -111,14 +108,15 @@ fn read_string(path: &Path) -> Result<String, std::io::Error> {
 
 struct Context<'a> {
     template_path: &'a Path,
-    source_file: &'a str,
+    template_parsed: &'a [parser::Line<'a>],
     source_file_path: &'a Path,
+    source_file: &'a str,
     source_title: &'a str,
 }
 
-fn apply_template(template_parsed: &[parser::Line], context: &Context) -> String {
+fn apply_template(context: &Context) -> String {
     let mut agg = String::new();
-    for item in template_parsed {
+    for item in context.template_parsed {
         let store;
         let val = match item {
             parser::Line::Raw(r) => r,
