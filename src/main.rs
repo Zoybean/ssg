@@ -26,7 +26,7 @@ pub struct App {
     output: PathBuf,
     /// Path to the directory containing files that will be pasted to the output dir, unmodified.
     #[arg(short, long)]
-    assets: Option<PathBuf>,
+    assets: Option<Vec<PathBuf>>,
 }
 
 fn main() {
@@ -34,7 +34,7 @@ fn main() {
         template: template_path,
         source_dir,
         output,
-        assets: assets_dir,
+        assets,
     } = App::parse();
     let mut buf = String::new();
     let template_parsed = load_template(&mut buf, &template_path);
@@ -49,18 +49,20 @@ fn main() {
             output.clone(),
         );
     }
-    if let Some(assets_dir) = assets_dir {
-        println!(
-            "copying files from '{}' to '{}'",
-            assets_dir.display(),
-            output.display()
-        );
-        fs_extra::dir::copy(
-            &assets_dir,
-            output,
-            &CopyOptions::new().overwrite(true).content_only(true),
-        )
-        .expect("copy assets");
+    if let Some(assets) = assets {
+        for dir in assets {
+            println!(
+                "copying files from '{}' to '{}'",
+                dir.display(),
+                output.display()
+            );
+            fs_extra::dir::copy(
+                &dir,
+                &output,
+                &CopyOptions::new().overwrite(true).content_only(true),
+            )
+            .expect("copy assets");
+        }
     }
 }
 
