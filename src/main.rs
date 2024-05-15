@@ -69,6 +69,9 @@ fn main() {
         }
     }
     if rss {
+        let mut rss_path = output.clone();
+        rss_path.push("feed.xml");
+        println!("writing rss feed to '{}'", rss_path.display());
         let mut c = rss::Channel::default();
         let mut i = Vec::new();
         c.set_title(String::from("Candy Corvid"));
@@ -76,6 +79,7 @@ fn main() {
         c.set_description(String::from("CandyCorvid's RSS feed"));
         c.set_language(String::from("en-AU"));
         let url = String::from("https://candy-corvid.neocities.org/recipes");
+        let url2 = String::from("https://candy-corvid.neocities.org/not-recipes");
         i.push(
             rss::ItemBuilder::default()
                 .title(Some(String::from("my recipes")))
@@ -90,9 +94,35 @@ fn main() {
                 ))
                 .build(),
         );
+        i.push(
+            rss::ItemBuilder::default()
+                .title(Some(String::from("my duplicate recipes")))
+                .link(Some(url.clone()))
+                .description(Some(String::from("I made some recipes")))
+                .author(Some(String::from("Xoey")))
+                .guid(Some(
+                    rss::GuidBuilder::default()
+                        .value(url.clone())
+                        .permalink(true)
+                        .build(),
+                ))
+                .build(),
+        );
+        i.push(
+            rss::ItemBuilder::default()
+                .title(Some(String::from("not my recipes")))
+                .link(Some(url2.clone()))
+                .description(Some(String::from("I didnt make some recipes")))
+                .author(Some(String::from("Xoey")))
+                .guid(Some(
+                    rss::GuidBuilder::default()
+                        .value(url2.clone())
+                        .permalink(true)
+                        .build(),
+                ))
+                .build(),
+        );
         c.set_items(i);
-        let mut rss_path = output.clone();
-        rss_path.push("feed.xml");
         let rss_file = std::fs::File::create(rss_path).expect("creating rss file");
         c.write_to(rss_file).expect("writing rss file");
     }
