@@ -211,6 +211,8 @@ fn write_rss(rss_path: PathBuf, items: Vec<rss::Item>) -> Result<(), RssWriteErr
 fn read_rss(rss_src: PathBuf) -> Result<Vec<rss::Item>, RssSourceError> {
     let mut items = Vec::new();
     let mut guids = HashSet::new();
+    let root =
+        url::Url::parse("https://candy-corvid.neocities.org/").expect("site url is well-formed");
     for file in fs::read_dir(rss_src)? {
         #[derive(serde::Deserialize, Debug)]
         struct RssSourceItem {
@@ -229,6 +231,8 @@ fn read_rss(rss_src: PathBuf) -> Result<Vec<rss::Item>, RssSourceError> {
         log::info!("feed item: {:?}", item);
 
         let RssSourceItem { title, desc, url } = item;
+        let url = root.join(&url).expect("rss url is well-formed").to_string();
+
         items.push(
             rss::ItemBuilder::default()
                 .title(Some(title))
