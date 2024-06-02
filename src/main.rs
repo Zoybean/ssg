@@ -113,7 +113,7 @@ enum RssSourceError {
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error("non-unique GUID used for RSS feed")]
-    Guid,
+    DuplicateGuid,
 }
 #[derive(thiserror::Error, Debug)]
 enum RssWriteError {
@@ -142,7 +142,7 @@ fn read_rss(rss_src: PathBuf) -> Result<Vec<rss::Item>, RssSourceError> {
     let mut items = Vec::new();
     let mut guids = HashSet::new();
     for file in fs::read_dir(rss_src)? {
-        #[derive(serde::Deserialize)]
+        #[derive(serde::Deserialize, Debug)]
         struct RssSourceItem {
             title: String,
             desc: Option<String>,
@@ -156,6 +156,7 @@ fn read_rss(rss_src: PathBuf) -> Result<Vec<rss::Item>, RssSourceError> {
             buf
         };
         let item: RssSourceItem = toml::de::from_str(&content)?;
+        println!("feed item: {:?}", item);
 
         let RssSourceItem { title, desc, url } = item;
         items.push(
@@ -172,7 +173,7 @@ fn read_rss(rss_src: PathBuf) -> Result<Vec<rss::Item>, RssSourceError> {
                 .build(),
         );
         if !guids.insert(url) {
-            Err(RssSourceError::Guid)?;
+            Err(RssSourceError::DuplicateGuid)?;
         }
     }
     Ok(items)
