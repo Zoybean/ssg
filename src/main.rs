@@ -1,7 +1,8 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::{self, read_dir},
     io::{self, Read as _},
+    ops::Neg as _,
     path::PathBuf,
 };
 
@@ -30,6 +31,15 @@ pub struct App {
     /// Folder containing RSS feed items
     #[arg(short, long)]
     rss: Option<PathBuf>,
+    /// Increase log level by 1
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    verbose: u8,
+    /// Reduce log level by 1
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    quiet: u8,
+    /// Disable logger entirely
+    #[arg(long)]
+    no_log: bool,
 }
 
 fn main() {
@@ -39,7 +49,21 @@ fn main() {
         output,
         assets,
         rss,
+        verbose,
+        quiet,
+        no_log,
     } = App::parse();
+    if !no_log {
+        simplelog::SimpleLogger::init(
+            resolve_log_level(quiet, verbose),
+            simplelog::ConfigBuilder::new()
+                .set_level_color(log::Level::Error, Some(simplelog::Color::Red))
+                .set_location_level(log::LevelFilter::Debug)
+                .build(),
+        )
+        .expect("registering logger");
+    }
+
     let mut buf = String::new();
     let template_parsed = template::load_template(&mut buf, &template_path);
     fs::create_dir_all(&output).expect("creating output dir");
@@ -54,9 +78,9 @@ fn main() {
         );
     }
     if let Some(assets) = assets {
-        println!("copying assets");
+        log::info!("copying assets");
         for dir in assets {
-            println!(
+            log::info!(
                 "copying files from '{}' to '{}'",
                 dir.display(),
                 output.display()
@@ -64,7 +88,7 @@ fn main() {
             let (root, walk_dir) = walk_visible_entries(dir);
             for entry in walk_dir {
                 let entry = entry.expect("read asset entry");
-                // println!("walking {}", entry.path().display());
+                log::trace!("walking {}", entry.path().display());
                 if entry.file_type().is_file() {
                     let path = entry.into_path();
                     let rel = path.strip_prefix(root.path()).expect(
@@ -72,7 +96,7 @@ fn main() {
                     );
                     let mut dest = output.clone();
                     dest.push(rel);
-                    println!("copying '{}' to '{}'", path.display(), dest.display());
+                    log::debug!("copying '{}' to '{}'", path.display(), dest.display());
                     fs::copy(path, dest).expect("copy file");
                 }
             }
@@ -84,6 +108,20 @@ fn main() {
         rss_path.push("feed.xml");
         write_rss(rss_path, items).expect("writing rss output file");
     }
+}
+
+fn resolve_log_level(quiet: u8, verbose: u8) -> log::LevelFilter {
+    let level_shift = (quiet as i8).neg().saturating_add_unsigned(verbose);
+    // cannot create levels from integers, so create a map to do it for us
+    let levels: HashMap<_, _> = log::LevelFilter::iter().map(|l| (l as i8, l)).collect();
+    // initial log level, that is then shifted
+    let mut level = log::LevelFilter::Info as i8;
+    // shift the default log level
+    level += level_shift;
+    // ensure the shifted value is still within the range of valid log levels
+    // WARN: this may fail if there are ever any gaps in the sequence of log::LevelFilter enum values
+    level = level.clamp(log::LevelFilter::Off as i8, log::LevelFilter::max() as i8);
+    levels[&level]
 }
 
 /// walk entries of the directory, skipping items that start with '.'
@@ -126,7 +164,7 @@ enum RssWriteError {
 fn write_rss(rss_path: PathBuf, items: Vec<rss::Item>) -> Result<(), RssWriteError> {
     // TODO atom self element
     // TODO properly list updates
-    println!("writing rss feed to '{}'", rss_path.display());
+    log::info!("writing rss feed to '{}'", rss_path.display());
     let rss_file = fs::File::create(rss_path)?;
     let mut c = rss::Channel::default();
     c.set_title(String::from("Candy Corvid"));
@@ -156,7 +194,7 @@ fn read_rss(rss_src: PathBuf) -> Result<Vec<rss::Item>, RssSourceError> {
             buf
         };
         let item: RssSourceItem = toml::de::from_str(&content)?;
-        println!("feed item: {:?}", item);
+        log::info!("feed item: {:?}", item);
 
         let RssSourceItem { title, desc, url } = item;
         items.push(

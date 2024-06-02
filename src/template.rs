@@ -47,7 +47,7 @@ pub(crate) fn convert_template_file(
     let out_path = path_for(from_dir, to_dir, &context.source_file_path, None);
     let mut out_file = File::create(&out_path).expect("open output file");
 
-    println!(
+    log::info!(
         "writing file '{}' from template '{}' and content '{}'",
         out_path.display(),
         template_path.display(),
