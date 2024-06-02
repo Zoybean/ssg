@@ -45,13 +45,14 @@ pub(crate) fn convert_template_file(
         source_title: "Candy Corvid",
     };
     let out_path = path_for(from_dir, to_dir, &context.source_file_path, None);
+    log::debug!("template output path: {}", out_path.display());
     let mut out_file = File::create(&out_path).expect("open output file");
 
     log::info!(
-        "writing file '{}' from template '{}' and content '{}'",
+        "writing file '{}' from content '{}' and template '{}'",
         out_path.display(),
+        context.source_file_path.display(),
         template_path.display(),
-        context.source_file_path.display()
     );
     let out = apply_template(&context);
     write!(&mut out_file, "{}", out).expect("write output file");
@@ -65,8 +66,8 @@ pub(crate) fn path_for(
     strip_extension: Option<&str>,
 ) -> PathBuf {
     out_root.push(
-        path.strip_prefix(in_root)
-            .expect("input path should be in input dir"),
+        path.file_name()
+            .expect("template file is not filesystem root"),
     );
     if let Some(suf) = strip_extension {
         if out_root.extension() == Some(suf.as_ref()) {
@@ -108,7 +109,7 @@ pub(crate) fn apply_template(context: &Context) -> String {
                 parser::Insert::Var(v) => evaluate(v, context),
             },
         };
-        writeln!(&mut agg, "{}", val).unwrap();
+        writeln!(&mut agg, "{}", val).expect("write failed");
     }
     agg
 }

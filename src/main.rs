@@ -3,12 +3,13 @@ use std::{
     fs::{self, read_dir},
     io::{self, Read as _},
     ops::Neg as _,
-    path::PathBuf,
+    path::{self, PathBuf},
 };
 
 use clap::Parser as _;
 
 use parser::Var;
+use walkdir::{DirEntry, WalkDir};
 
 mod parser;
 mod template;
@@ -67,15 +68,38 @@ fn main() {
     let mut buf = String::new();
     let template_parsed = template::load_template(&mut buf, &template_path);
     fs::create_dir_all(&output).expect("creating output dir");
-    for entry in read_dir(&source_dir).expect("read dir") {
-        let source_path = entry.expect("reading dir entry").path();
-        template::convert_template_file(
-            &source_path,
-            &template_path,
-            &template_parsed,
-            &source_dir,
-            output.clone(),
-        );
+    let (root, walk_dir) = walk_visible_entries(&source_dir);
+    for entry in walk_dir {
+        // TODO allow templates within subdirs
+        let entry = entry.expect("reading dir entry");
+        let source_path = entry.path();
+        let dest_path = graft_path(root.path(), output.clone(), source_path);
+        if entry.file_type().is_dir() {
+            log::debug!(
+                "creating subdirectory '{}' mirroring source '{}'",
+                dest_path.display(),
+                source_path.display()
+            );
+            fs::create_dir_all(&dest_path).expect("create subdir");
+        }
+        if entry.file_type().is_file() {
+            log::debug!(
+                "creating templated file '{}' mirroring source '{}'",
+                dest_path.display(),
+                source_path.display()
+            );
+            let to_dir = dest_path
+                .parent()
+                .expect("every path we care about has a parent")
+                .to_owned();
+            template::convert_template_file(
+                &source_path,
+                &template_path,
+                &template_parsed,
+                &source_dir,
+                to_dir,
+            );
+        }
     }
     if let Some(assets) = assets {
         log::info!("copying assets");
@@ -88,16 +112,16 @@ fn main() {
             let (root, walk_dir) = walk_visible_entries(dir);
             for entry in walk_dir {
                 let entry = entry.expect("read asset entry");
-                log::trace!("walking {}", entry.path().display());
+                let src = entry.path();
+                let dest = &graft_path(root.path(), output.clone(), src);
+                log::trace!("walking {}", src.display());
+                if entry.file_type().is_dir() {
+                    log::trace!("creating dir {}", dest.display());
+                    fs::create_dir_all(dest).expect("create asset subdir");
+                }
                 if entry.file_type().is_file() {
-                    let path = entry.into_path();
-                    let rel = path.strip_prefix(root.path()).expect(
-                        "path should be prefixed with root path. no other symlinks are followed",
-                    );
-                    let mut dest = output.clone();
-                    dest.push(rel);
-                    log::debug!("copying '{}' to '{}'", path.display(), dest.display());
-                    fs::copy(path, dest).expect("copy file");
+                    log::debug!("copying '{}' to '{}'", src.display(), dest.display());
+                    fs::copy(src, dest).expect("copy file");
                 }
             }
         }
@@ -108,6 +132,17 @@ fn main() {
         rss_path.push("feed.xml");
         write_rss(rss_path, items).expect("writing rss output file");
     }
+}
+
+/// get the relative path from `source_root` to `path`, then add that relative path to `dest_root`
+fn graft_path(source_root: &path::Path, mut dest_root: PathBuf, path: &path::Path) -> PathBuf {
+    let orig_dest = dest_root.clone();
+    let rel = path
+        .strip_prefix(source_root)
+        .expect("path should be prefixed with root path. no other symlinks are followed");
+    dest_root.push(rel);
+    assert_ne!(orig_dest, dest_root);
+    dest_root
 }
 
 fn resolve_log_level(quiet: u8, verbose: u8) -> log::LevelFilter {
@@ -126,16 +161,13 @@ fn resolve_log_level(quiet: u8, verbose: u8) -> log::LevelFilter {
 
 /// walk entries of the directory, skipping items that start with '.'
 fn walk_visible_entries(
-    dir: impl AsRef<std::path::Path>,
-) -> (
-    walkdir::DirEntry,
-    walkdir::FilterEntry<walkdir::IntoIter, impl FnMut(&walkdir::DirEntry) -> bool>,
-) {
-    fn entry_hidden(ent: &walkdir::DirEntry) -> bool {
+    dir: impl AsRef<path::Path>,
+) -> (DirEntry, impl Iterator<Item = walkdir::Result<DirEntry>>) {
+    fn entry_hidden(ent: &DirEntry) -> bool {
         ent.file_name().as_encoded_bytes().starts_with(b".")
     }
 
-    let mut walk_dir = walkdir::WalkDir::new(dir).into_iter();
+    let mut walk_dir = WalkDir::new(dir).into_iter();
     let root = walk_dir
         .next()
         .expect("directory should at least have a root element")
