@@ -6,7 +6,6 @@ use std::{
 };
 
 use clap::Parser as _;
-use fs_extra::dir::CopyOptions;
 
 use parser::Var;
 
@@ -55,18 +54,28 @@ fn main() {
         );
     }
     if let Some(assets) = assets {
+        println!("copying assets");
         for dir in assets {
             println!(
                 "copying files from '{}' to '{}'",
                 dir.display(),
                 output.display()
             );
-            fs_extra::dir::copy(
-                &dir,
-                &output,
-                &CopyOptions::new().overwrite(true).content_only(true),
-            )
-            .expect("copy assets");
+            let (root, walk_dir) = walk_visible_entries(dir);
+            for entry in walk_dir {
+                let entry = entry.expect("read asset entry");
+                // println!("walking {}", entry.path().display());
+                if entry.file_type().is_file() {
+                    let path = entry.into_path();
+                    let rel = path.strip_prefix(root.path()).expect(
+                        "path should be prefixed with root path. no other symlinks are followed",
+                    );
+                    let mut dest = output.clone();
+                    dest.push(rel);
+                    println!("copying '{}' to '{}'", path.display(), dest.display());
+                    fs::copy(path, dest).expect("copy file");
+                }
+            }
         }
     }
     if let Some(rss_src) = rss {
@@ -75,6 +84,26 @@ fn main() {
         rss_path.push("feed.xml");
         write_rss(rss_path, items).expect("writing rss output file");
     }
+}
+
+/// walk entries of the directory, skipping items that start with '.'
+fn walk_visible_entries(
+    dir: impl AsRef<std::path::Path>,
+) -> (
+    walkdir::DirEntry,
+    walkdir::FilterEntry<walkdir::IntoIter, impl FnMut(&walkdir::DirEntry) -> bool>,
+) {
+    fn entry_hidden(ent: &walkdir::DirEntry) -> bool {
+        ent.file_name().as_encoded_bytes().starts_with(b".")
+    }
+
+    let mut walk_dir = walkdir::WalkDir::new(dir).into_iter();
+    let root = walk_dir
+        .next()
+        .expect("directory should at least have a root element")
+        .expect("traverse root dir of asset");
+    let walk_dir = walk_dir.filter_entry(|ent| !entry_hidden(ent));
+    (root, walk_dir)
 }
 
 #[derive(thiserror::Error, Debug)]
